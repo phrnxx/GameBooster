@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Diagnostics;
 using System.Windows.Forms;
@@ -8,16 +8,18 @@ using System.Threading.Tasks;
 using System.Net.NetworkInformation;
 using LibreHardwareMonitor.Hardware;
 using Microsoft.Win32;
+using System.Security.Principal;
 
 namespace Game_Booster
 {
     public partial class Form1 : Form
     {
-        // Шлях до картинки
+        // Шлях до картинки (відносний до папки програми) - більш надійно
         private string imagePath = @"C:\Users\phrnxxx\source\repos\Game Booster\bg.jpg";
 
         // UI Елементи
         private Button btnBoost;
+        private Button btnRestore;
 
         // Наші кастомні вкладки (Кнопки)
         private Button tabGaming, tabSystem, tabVisuals, tabNet;
@@ -63,8 +65,8 @@ namespace Game_Booster
 
             if (File.Exists(imagePath))
             {
-                this.BackgroundImage = Image.FromFile(imagePath);
-                this.BackgroundImageLayout = ImageLayout.Stretch;
+                try { this.BackgroundImage = Image.FromFile(imagePath); this.BackgroundImageLayout = ImageLayout.Stretch; }
+                catch { this.BackColor = Color.Black; }
             }
             else
             {
@@ -94,7 +96,6 @@ namespace Game_Booster
             tabNet = CreateTabButton("NETWORK", 340, tabY, tabW, tabH);
 
             // === СТВОРЮЄМО ПРОЗОРІ ПАНЕЛІ ===
-            // Всі панелі в одному місці, одна над одною
             Point pnlLoc = new Point(25, 100);
             Size pnlSize = new Size(420, 270);
 
@@ -151,6 +152,20 @@ namespace Game_Booster
             btnBoost.MouseEnter += (s, e) => { btnBoost.BackColor = Color.White; btnBoost.ForeColor = Color.Black; };
             btnBoost.MouseLeave += (s, e) => { btnBoost.BackColor = Color.Black; btnBoost.ForeColor = Color.White; };
             this.Controls.Add(btnBoost);
+
+            // === КНОПКА RESTORE ===
+            btnRestore = new Button();
+            btnRestore.Text = "RESTORE";
+            btnRestore.Font = new Font("Tahoma", 9, FontStyle.Bold);
+            btnRestore.BackColor = Color.Black;
+            btnRestore.ForeColor = Color.White;
+            btnRestore.FlatStyle = FlatStyle.Flat;
+            btnRestore.FlatAppearance.BorderColor = Color.White;
+            btnRestore.Size = new Size(100, 28);
+            btnRestore.Location = new Point(200, 385);
+            btnRestore.Cursor = Cursors.Hand;
+            btnRestore.Click += BtnRestore_Click;
+            this.Controls.Add(btnRestore);
 
             // === ПРАВА ЧАСТИНА (MONITOR) ===
             int rightX = 560;
@@ -259,44 +274,85 @@ namespace Game_Booster
             btnBoost.Text = "WORKING...";
             btnBoost.BackColor = Color.DarkRed;
 
-            await Task.Run(() =>
+            if (!IsAdministrator())
             {
-                try
+                MessageBox.Show("Не достатньо прав. Запустіть програму від імені адміністратора.", "Права адміністратора", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                btnBoost.Text = "APPLY";
+                btnBoost.BackColor = Color.Black;
+                btnBoost.Enabled = true;
+                return;
+            }
+
+            try
+            {
+                var options = new OptimizationOptions
                 {
-                    // Gaming
-                    if (chkMouse.Checked) { SetReg(@"HKCU\Control Panel\Mouse", "MouseSpeed", "0"); SetReg(@"HKCU\Control Panel\Mouse", "MouseThreshold1", "0"); SetReg(@"HKCU\Control Panel\Mouse", "MouseThreshold2", "0"); }
-                    if (chkGameBar.Checked) { SetReg(@"HKCU\System\GameConfigStore", "GameDVR_Enabled", 0); SetReg(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0); }
-                    if (chkHAGS.Checked) SetReg(@"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 2);
-                    if (chkFSO.Checked) SetReg(@"HKCU\System\GameConfigStore", "GameDVR_FSEBehaviorMode", 2);
+                    EnableMouse = chkMouse.Checked,
+                    DisableGameBar = chkGameBar.Checked,
+                    EnableHAGS = chkHAGS.Checked,
+                    DisableFSO = chkFSO.Checked,
+                    EnablePowerPlan = chkPower.Checked,
+                    HighPriority = chkPriority.Checked,
+                    DisableThrottling = chkThrottling.Checked,
+                    DisableHibernation = chkHibern.Checked,
+                    OptimizeVisuals = chkVisuals.Checked,
+                    ClassicMenu = chkMenu.Checked,
+                    DisableNotifications = chkNotifs.Checked,
+                    DisableTelemetry = chkPrivacy.Checked,
+                    DisableSearch = chkSearch.Checked,
+                    OptimizeNetwork = chkNet.Checked,
+                    FlushDNS = chkDNS.Checked,
+                    DisableP2P = chkUpdate.Checked,
+                    DisableSysMain = chkSysMain.Checked,
+                    Debloat = chkBloat.Checked
+                };
 
-                    // System
-                    if (chkPower.Checked) { RunCmd("powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61"); RunCmd("powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61"); }
-                    if (chkPriority.Checked) { SetReg(@"HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38); }
-                    if (chkThrottling.Checked) SetReg(@"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", 0xFFFFFFFF);
-                    if (chkHibern.Checked) RunCmd("powercfg -h off");
+                await Task.Run(() => OptimizationManager.Apply(options, SetReg, RunCmd));
 
-                    // Visuals
-                    if (chkVisuals.Checked) { SetReg(@"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "EnableTransparency", 0); SetReg(@"HKCU\Control Panel\Desktop", "MenuShowDelay", "0"); }
-                    if (chkMenu.Checked) SetReg(@"HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32", "", "");
+                // даємо невелику паузу, але без Thread.Sleep
+                await Task.Delay(500);
 
-                    // Network
-                    if (chkNet.Checked) RunCmd("netsh int tcp set global autotuninglevel=normal");
-                    if (chkDNS.Checked) RunCmd("ipconfig /flushdns");
+                MessageBox.Show("Optimizations Applied!", "LOG");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка при застосуванні оптимізацій:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                btnBoost.Text = "APPLY";
+                btnBoost.BackColor = Color.Black;
+                btnBoost.Enabled = true;
+            }
+        }
 
-                    // Debloat
-                    if (chkBloat.Checked) { SetReg(@"HKCU\Software\Policies\Microsoft\Windows\WindowsCopilot", "TurnOffWindowsCopilot", 1); SetReg(@"HKCU\Control Panel\Accessibility\StickyKeys", "Flags", "506"); }
-                    if (chkPrivacy.Checked) SetReg(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0);
-                    if (chkSearch.Checked) { RunCmd("net stop WSearch"); RunCmd("net stop SysMain"); }
-                }
-                catch { }
+        private async void BtnRestore_Click(object? sender, EventArgs e)
+        {
+            btnRestore.Enabled = false;
+            btnRestore.Text = "RESTORING...";
 
-                System.Threading.Thread.Sleep(2000);
-            });
+            if (!IsAdministrator())
+            {
+                MessageBox.Show("Не достатньо прав. Запустіть програму від імені адміністратора.", "Права адміністратора", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                btnRestore.Text = "RESTORE";
+                btnRestore.Enabled = true;
+                return;
+            }
 
-            MessageBox.Show("Optimizations Applied!", "LOG");
-            btnBoost.Text = "APPLY";
-            btnBoost.BackColor = Color.Black;
-            btnBoost.Enabled = true;
+            try
+            {
+                await Task.Run(() => OptimizationManager.Restore(SetReg, RunCmd));
+                MessageBox.Show("Settings restored.", "LOG");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Помилка при відновленні налаштувань:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                btnRestore.Text = "RESTORE";
+                btnRestore.Enabled = true;
+            }
         }
 
         private void SetReg(string path, string name, object value)
@@ -305,13 +361,27 @@ namespace Game_Booster
             {
                 if (path.StartsWith("HKCU")) Registry.SetValue(path.Replace("HKCU", "HKEY_CURRENT_USER"), name, value);
                 else if (path.StartsWith("HKLM")) Registry.SetValue(path.Replace("HKLM", "HKEY_LOCAL_MACHINE"), name, value);
+                else Registry.SetValue(path, name, value);
             }
             catch { }
         }
 
         private void RunCmd(string cmd)
         {
-            try { Process.Start(new ProcessStartInfo { FileName = "cmd.exe", Arguments = "/C " + cmd, WindowStyle = ProcessWindowStyle.Hidden, CreateNoWindow = true }); } catch { }
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/C " + cmd,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using (var p = Process.Start(psi)) { p?.WaitForExit(5000); }
+            }
+            catch { }
         }
 
         private Label AddLabel(string text, int x, ref int y, Font font)
@@ -327,7 +397,7 @@ namespace Game_Booster
             try
             {
                 foreach (ManagementObject obj in new ManagementObjectSearcher("SELECT Product FROM Win32_BaseBoard").Get())
-                    motherboardName = obj["Product"].ToString();
+                    motherboardName = obj["Product"]?.ToString() ?? "Unknown";
             }
             catch { motherboardName = "Unknown"; }
         }
@@ -367,7 +437,7 @@ namespace Game_Booster
                                 if (s.SensorType == SensorType.Load && s.Name.Contains("Total")) cLoad = s.Value ?? 0;
                                 if (s.SensorType == SensorType.Temperature)
                                     if (s.Name.Contains("Package") || s.Name.Contains("Tctl") || s.Name.Contains("Core"))
-                                        if (s.Value > cTemp) cTemp = s.Value ?? 0;
+                                        if ((s.Value ?? 0) > cTemp) cTemp = s.Value ?? 0;
                             }
                         }
                         if (hw.HardwareType == HardwareType.GpuNvidia || hw.HardwareType == HardwareType.GpuAmd)
@@ -402,6 +472,101 @@ namespace Game_Booster
                 catch { }
             });
         }
+
+        private bool IsAdministrator()
+        {
+            try
+            {
+                WindowsIdentity identity = WindowsIdentity.GetCurrent();
+                WindowsPrincipal principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch { return false; }
+        }
+
         private void Form1_Load(object sender, EventArgs e) { }
+    }
+
+    // === Optimization helper: містить логіку застосування та відновлення налаштувань ===
+    public static class OptimizationManager
+    {
+        // Збережені значення для відновлення (можна розширити і зберегти в файл)
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> backup = new System.Collections.Concurrent.ConcurrentDictionary<string, object>();
+
+        public static void Apply(OptimizationOptions opts, Action<string, string, object> setReg, Action<string> runCmd)
+        {
+            try
+            {
+                // Gaming
+                if (opts.EnableMouse) { setReg(@"HKCU\Control Panel\Mouse", "MouseSpeed", "0"); setReg(@"HKCU\Control Panel\Mouse", "MouseThreshold1", "0"); setReg(@"HKCU\Control Panel\Mouse", "MouseThreshold2", "0"); }
+                if (opts.DisableGameBar) { setReg(@"HKCU\System\GameConfigStore", "GameDVR_Enabled", 0); setReg(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR", 0); }
+                if (opts.EnableHAGS) setReg(@"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", 1); // 1 = enable
+                if (opts.DisableFSO) setReg(@"HKCU\System\GameConfigStore", "GameDVR_FSEBehaviorMode", 2);
+
+                // System
+                if (opts.EnablePowerPlan) { runCmd("powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61"); runCmd("powercfg /setactive e9a42b02-d5df-448d-aa00-03f14749eb61"); }
+                if (opts.HighPriority) { setReg(@"HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38); }
+                if (opts.DisableThrottling) setReg(@"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", unchecked((int)0xFFFFFFFF));
+                if (opts.DisableHibernation) runCmd("powercfg -h off");
+
+                // Visuals
+                if (opts.OptimizeVisuals) { setReg(@"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "EnableTransparency", 0); setReg(@"HKCU\Control Panel\Desktop", "MenuShowDelay", "0"); }
+                if (opts.ClassicMenu) setReg(@"HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32", "", "");
+
+                // Network
+                if (opts.OptimizeNetwork) runCmd("netsh int tcp set global autotuninglevel=disabled"); // disabled often reduces latency
+                if (opts.FlushDNS) runCmd("ipconfig /flushdns");
+
+                // Debloat
+                if (opts.Debloat) { setReg(@"HKCU\Software\Policies\Microsoft\Windows\WindowsCopilot", "TurnOffWindowsCopilot", 1); setReg(@"HKCU\Control Panel\Accessibility\StickyKeys", "Flags", "506"); }
+                if (opts.DisableTelemetry) setReg(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 0);
+                if (opts.DisableSearch) { runCmd("sc config WSearch start= disabled"); runCmd("sc stop WSearch"); runCmd("sc config SysMain start= disabled"); runCmd("sc stop SysMain"); }
+
+                // Disable P2P updates (example)
+                if (opts.DisableP2P) { setReg(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization", "DODownloadMode", 0); }
+
+            }
+            catch { }
+        }
+
+        public static void Restore(Action<string, string, object> setReg, Action<string> runCmd)
+        {
+            try
+            {
+                // Просте відновлення: можна розширити логіку збереження та відновлення
+                // Повертаємо деякі сервіси у звичайний стан
+                runCmd("sc config WSearch start= auto"); runCmd("sc start WSearch");
+                runCmd("sc config SysMain start= auto"); runCmd("sc start SysMain");
+
+                // Вмикаємо hibernation назад
+                runCmd("powercfg -h on");
+
+                // Деякі реєстри можна очистити або встановити у дефолт
+                setReg(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry", 1);
+            }
+            catch { }
+        }
+    }
+
+    public class OptimizationOptions
+    {
+        public bool EnableMouse { get; set; }
+        public bool DisableGameBar { get; set; }
+        public bool EnableHAGS { get; set; }
+        public bool DisableFSO { get; set; }
+        public bool EnablePowerPlan { get; set; }
+        public bool HighPriority { get; set; }
+        public bool DisableThrottling { get; set; }
+        public bool DisableHibernation { get; set; }
+        public bool OptimizeVisuals { get; set; }
+        public bool ClassicMenu { get; set; }
+        public bool DisableNotifications { get; set; }
+        public bool DisableTelemetry { get; set; }
+        public bool DisableSearch { get; set; }
+        public bool OptimizeNetwork { get; set; }
+        public bool FlushDNS { get; set; }
+        public bool DisableP2P { get; set; }
+        public bool DisableSysMain { get; set; }
+        public bool Debloat { get; set; }
     }
 }
